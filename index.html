@@ -78,7 +78,7 @@ h3.blk{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .langtag{font-size:13px;border:1px solid var(--acc);color:var(--acc);border-radius:6px;padding:2px 6px;cursor:pointer}
 
 </style></head><body>
-<header><span id="hdr"><b>Cocos community survey</b> · v16-offline</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Interviewer</a></span></header>
+<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 6cd897</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Interviewer</a></span></header>
 <main id="main"></main>
 <div class="nav" id="nav"><button class="sec" id="back">Back</button><span style="flex:1"></span><button class="warn" id="endEarly">End early</button><button id="next">Next</button></div>
 <script>
@@ -102,6 +102,8 @@ function saveHH(h){ localStorage.setItem(KEY_HH, JSON.stringify(h)) }
 function settings(){ try{return JSON.parse(localStorage.getItem(KEY_SET)||"{}")}catch(e){return {}} }
 function setSetting(k,v){ const s=settings(); s[k]=v; localStorage.setItem(KEY_SET, JSON.stringify(s)) }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8) }
+function touch(rec){ rec.updated=new Date().toISOString(); return rec; }
+function deviceId(){ let d=settings().device; if(!d){ d="dev-"+uid(); setSetting("device", d); } return d; }
 function today(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0") }
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
 
@@ -142,11 +144,12 @@ function renderGrid(main){
   <div class="sub">Special houses 98 to 107</div><div class="grid">${HOUSES_SPECIAL.map(tile).join("")}</div>
   <div class="sub">Other dwellings (no house number)</div><div class="grid">${h.extras.map(e=>tile(e.id)).join("")}<div class="tile add" id="addExtra">+ add</div></div>
   <p style="margin-top:28px"><button class="sec" id="noHouse">Start an interview with no house number</button></p>
-  <p class="info">Tap a house to record a visit or start its interview. Everything is stored on this tablet until exported from the Interviewer screen.</p>`;
+  <p class="info">Tap a house to record a visit or start its interview. ${syncEnabled()?`<span id="syncLine">${esc(syncLineText())}</span>`:"Everything is stored on this tablet until it is sent from the Interviewer screen."}</p>`;
   document.getElementById("who").onchange=e=>setSetting("interviewer", e.target.value);
+  if(syncEnabled() && (!settings().lastSync || Date.now()-new Date(settings().lastSync).getTime()>120000)) syncNow("grid");
   if(!st.interviewer) setSetting("interviewer", SPEC.blocks[0].pages[0][0].choices[2]);
   main.querySelectorAll(".tile[data-house]").forEach(t=>t.onclick=()=>{ VIEW={screen:"house",house:t.dataset.house}; render(); });
-  document.getElementById("addExtra").onclick=()=>{ const desc=prompt("Where is this dwelling? (lot number, street, or a short description)"); if(desc==null) return; const hh=loadHH(); const id="E"+(hh.extras.length+1); hh.extras.push({id, desc:desc.trim()}); houseRec(hh,id); saveHH(hh); VIEW={screen:"house",house:id}; render(); };
+  document.getElementById("addExtra").onclick=()=>{ const desc=prompt("Where is this dwelling? (lot number, street, or a short description)"); if(desc==null) return; const hh=loadHH(); const tag=deviceId().slice(-3); let n=1; while(hh.extras.some(e=>e.id==="E"+n+"."+tag)) n++; const id="E"+n+"."+tag; hh.extras.push({id, desc:desc.trim(), device:deviceId()}); touch(houseRec(hh,id)); saveHH(hh); scheduleSync(); VIEW={screen:"house",house:id}; render(); };
   document.getElementById("noHouse").onclick=()=>newSession(null);
 }
 
@@ -179,7 +182,7 @@ function renderHouse(main, id){
   <p><button class="big" id="startIv" ${canStart?"":"disabled"}>Start interview for house ${esc(id)}</button></p>
   ${canStart?"":`<p class="info">${s==="done"?"An interview has already been done for this house. Use the no-house option on the main screen if a second interview here is really intended.":"To start: mark that people live here, enter the number of adult men and women, and choose which person on the birthday list is being interviewed."}</p>`}
   </div>`;
-  const save=()=>{ const hh=loadHH(); hh.houses[id]=rec; saveHH(hh); };
+  const save=()=>{ const hh=loadHH(); hh.houses[id]=touch(rec); saveHH(hh); scheduleSync(); };
   document.getElementById("backGrid").onclick=e=>{e.preventDefault(); VIEW={screen:"grid"}; render();};
   main.querySelectorAll(".seg").forEach(sg=>sg.querySelectorAll("button").forEach(b=>b.onclick=()=>{ rec[sg.dataset.seg]=b.dataset.v; save(); render(); }));
   document.getElementById("men").oninput=e=>{rec.men=e.target.value; save(); document.getElementById("startIv").disabled=!(rec.occupied==="Y"&&rec.men!==""&&rec.women!==""&&rec.rank!==""&&s!=="done");};
@@ -331,8 +334,9 @@ function finish(){
   if(houseId){ const hh=loadHH(); const rec=houseRec(hh,houseId);
     if(declined){ rec.visits.push({date:today(), outcome:"R", note:"declined at consent"}); }
     else { rec.responses.push(S.id); rec.visits.push({date:today(), outcome: early?"P":"I", note:""}); }
-    saveHH(hh); }
+    touch(rec); saveHH(hh); }
   localStorage.removeItem(KEY_CUR); S=null;
+  syncNow("interview");
   if(localStorage.getItem("cocos_autobackup")!=="off"){ try{ download("cocos_backup_"+new Date().toISOString().replace(/[:.]/g,"-")+"_n"+r.length+".json", JSON.stringify({responses:r, households:loadHH()}), "application/json"); }catch(e){} }
   document.getElementById("nav").style.display="none";
   document.getElementById("main").innerHTML=`<div class="end"><h2>Thank you</h2><p>Your responses have been saved on this device.</p><p class="info">Please hand the tablet back to the interviewer.</p><p style="margin-top:40px"><button id="again">${houseId?"Back to the house list":"Start next respondent"}</button></p></div>`;
@@ -365,24 +369,100 @@ function toCSV(rows){ if(!rows.length) return ""; const cols=[...new Set(rows.fl
   const q=v=>{v=String(v==null?"":v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
   return cols.join(",")+"\n"+rows.map(r=>cols.map(c=>q(r[c])).join(",")).join("\n"); }
 function download(name,text,type){ const b=new Blob([text],{type}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+function backupName(){ return "cocos_backup_"+new Date().toISOString().slice(0,16).replace(/[:T]/g,"-")+"_"+(settings().interviewer||"device").split(" ")[0]+".json"; }
+function backupJSON(){ return JSON.stringify({device:deviceId(), interviewer:settings().interviewer||"", exported:new Date().toISOString(), responses:loadResponses(), households:loadHH()}); }
+// Share the backup through the phone or tablet share sheet (Gmail, Drive, etc.). Falls back to a download where sharing files is not supported.
+function shareBackup(){
+  const name=backupName(), text=backupJSON();
+  try{
+    const f=new File([text],name,{type:"application/json"});
+    const n=loadResponses().length;
+    const msg="Cocos survey backup from "+(settings().interviewer||"the tablet")+": "+n+" responses, household log included. Send to "+SYNC.email;
+    if(navigator.canShare && navigator.canShare({files:[f]})){ navigator.share({files:[f], title:"Cocos survey backup", text:msg}).then(()=>setSetting("lastShare", new Date().toISOString())).catch(e=>{ if(e && e.name!=="AbortError") download(name,text,"application/json"); }); return; }
+  }catch(e){}
+  download(name,text,"application/json");
+  alert("This browser cannot open the share sheet, so the backup was downloaded instead. Attach it to an email to "+SYNC.email+".");
+}
+
+// ---------------- sync with the research team's Google Apps Script (optional; does nothing until SYNC.url is set)
+const SYNC = { url: "https://script.google.com/macros/s/AKfycbyV074oj9YVRsvibP_BysQW8bn8lKgSgG2ODsZzs56KdbUTgur_VLDqk_YYbvxPHro/exec", email: "lachlan.mcnamee@monash.edu" };
+function passcode(){ return (settings().passcode||"").trim(); }
+let syncTimer=null, syncBusy=false;
+function syncUrl(){ return SYNC.url || settings().syncUrl || ""; }
+function syncEnabled(){ return !!syncUrl() && !!passcode(); }
+function mergeHH(a,b){ // union of two household logs; per house the more recently updated record wins its fields, visits and responses are unioned
+  const out={houses:{},extras:[]}; const ids=new Set([...a.extras.map(e=>e.id),...b.extras.map(e=>e.id)]);
+  for(const id of ids){ out.extras.push(a.extras.find(e=>e.id===id)||b.extras.find(e=>e.id===id)); }
+  const keys=new Set([...Object.keys(a.houses),...Object.keys(b.houses)]);
+  for(const k of keys){ const x=a.houses[k], y=b.houses[k]; if(!x||!y){ out.houses[k]=x||y; continue; }
+    const [newer,older]= (x.updated||"") >= (y.updated||"") ? [x,y] : [y,x];
+    const rec=Object.assign({}, older, newer);
+    const vkey=v=>v.date+"|"+v.outcome+"|"+(v.note||""); const seen=new Set(); rec.visits=[];
+    for(const v of [...(x.visits||[]),...(y.visits||[])]){ if(!seen.has(vkey(v))){ seen.add(vkey(v)); rec.visits.push(v); } }
+    rec.visits.sort((p,q)=>(p.date||"").localeCompare(q.date||""));
+    rec.responses=[...new Set([...(x.responses||[]),...(y.responses||[])])];
+    out.houses[k]=rec; }
+  return out;
+}
+function mergeResponses(a,b){ const m=new Map(); for(const r of [...a,...b]) if(r&&r.id) m.set(r.id,r); return [...m.values()].sort((p,q)=>(p.started||"").localeCompare(q.started||"")); }
+function scheduleSync(){ if(!syncEnabled()) return; clearTimeout(syncTimer); syncTimer=setTimeout(()=>syncNow("edit"), 4000); }
+async function syncNow(reason){
+  if(!syncEnabled()) return false;
+  if(!navigator.onLine){ setSetting("syncState","offline"); updateSyncLine(); return false; }
+  if(syncBusy) return false; syncBusy=true; setSetting("syncState","busy"); updateSyncLine();
+  try{
+    const body=JSON.stringify({passcode:passcode(), device:deviceId(), interviewer:settings().interviewer||"", reason, version:SPEC.version, responses:loadResponses(), households:loadHH()});
+    const res=await fetch(syncUrl(),{method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body, redirect:"follow"});
+    const j=await res.json();
+    if(!j.ok) throw new Error(j.error||"server refused");
+    if(j.households) saveHH(mergeHH(loadHH(), j.households));
+    if(j.responses) saveResponses(mergeResponses(loadResponses(), j.responses));
+    setSetting("lastSync", new Date().toISOString()); setSetting("syncState","ok"); setSetting("syncError","");
+    syncBusy=false; updateSyncLine(); if(!S && VIEW.screen==="grid") render(); return true;
+  }catch(e){ setSetting("syncState","error"); setSetting("syncError", String(e&&e.message||e)); syncBusy=false; updateSyncLine(); return false; }
+}
+function syncLineText(){
+  if(!syncEnabled()) return "";
+  const st=settings(); const t=st.lastSync? new Date(st.lastSync) : null; const when=t? t.toLocaleString([], {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
+  if(st.syncState==="busy") return "Syncing with the research team…";
+  if(st.syncState==="offline") return "Offline. Last synced: "+when+". Will sync when online.";
+  if(st.syncState==="error") return "Sync failed ("+(st.syncError||"")+"). Last synced: "+when+".";
+  return "Synced with the research team: "+when+".";
+}
+function updateSyncLine(){ const el=document.getElementById("syncLine"); if(el) el.textContent=syncLineText(); }
+window.addEventListener("online", ()=>syncNow("online"));
+
 function admin(){
   const r=loadResponses(); const csv=toCSV(r.map(flatten)); const hh=loadHH(); const hcsv=toCSV(flattenHH(hh)); const d=new Date().toISOString().slice(0,10);
-  const done=Object.values(hh.houses).filter(x=>x.responses.length).length;
+  const done=Object.values(hh.houses).filter(x=>x.responses.length).length; const st=settings();
   document.getElementById("nav").style.display="none";
   document.getElementById("main").innerHTML=`<div class="admin"><h2>Interviewer</h2><p><b>${r.length}</b> stored response(s) on this device; <b>${done}</b> houses with an interview done.</p>
-  <p><button id="dlcsv">Download responses CSV</button> <button id="dlhh">Download household log CSV</button></p>
+  <div class="sub">Send the data to the research team</div>
+  <p><button id="share" class="big">Send backup (opens the share sheet: choose Gmail, send to ${esc(SYNC.email)})</button></p>
+  <p class="info">${st.lastShare?"Last sent from this device: "+esc(new Date(st.lastShare).toLocaleString()):"Nothing sent from this device yet."} Send a backup at the end of each day of interviewing.</p>
+  ${syncUrl()?`<p><label class="info">Sync passcode (from Lachlan; leave blank to keep this device offline-only) <input type="password" class="te" id="pass" value="${esc(passcode())}" style="max-width:220px;display:inline-block;margin-left:8px" inputmode="numeric" autocomplete="off"></label> <button id="passSave" class="sec">Save</button></p>`:""}
+  ${syncEnabled()?`<p><button id="syncBtn" class="sec">Sync now</button> <span class="info" id="syncLine">${esc(syncLineText())}</span></p>`:""}
+  <div class="sub">Files</div>
+  <p><button id="dlcsv" class="sec">Download responses CSV</button> <button id="dlhh" class="sec">Download household log CSV</button></p>
   <p><button id="dljson" class="sec">Download everything (JSON backup)</button> <button id="copy" class="sec">Copy responses CSV to clipboard</button></p>
-  <p class="info">Downloads go to the tablet's Downloads folder; email them to yourself when online. Send both CSV files each week.</p>
-  <pre>${esc(csv).slice(0,3000)}${csv.length>3000?"\n…":""}</pre>
+  <p class="info">Downloads go to the tablet's Downloads folder.</p>
+  <details><summary class="info">Preview of the responses CSV</summary><pre>${esc(csv).slice(0,3000)}${csv.length>3000?"\n…":""}</pre></details>
   <p><label><input type="checkbox" id="autobk" ${localStorage.getItem("cocos_autobackup")!=="off"?"checked":""}> Save a JSON backup to Downloads after each interview</label></p>
   <p style="margin-top:30px"><button class="sec" id="restore">Restore from a JSON backup file</button> <input type="file" id="restoreFile" accept="application/json" style="display:none"></p>
   <p style="margin-top:30px"><button class="warn" id="wipe">Delete all stored responses and the household log</button> <span class="info">(only after you have confirmed the export)</span></p>
   <p style="margin-top:30px"><button class="sec" id="home">Back to the house list</button></p></div>`;
   document.getElementById("dlcsv").onclick=()=>download("cocos_responses_"+d+".csv",csv,"text/csv");
   document.getElementById("dlhh").onclick=()=>download("cocos_household_log_"+d+".csv",hcsv,"text/csv");
-  document.getElementById("dljson").onclick=()=>download("cocos_backup_"+d+".json",JSON.stringify({responses:r,households:hh},null,1),"application/json");
+  document.getElementById("dljson").onclick=()=>download(backupName(),backupJSON(),"application/json");
+  document.getElementById("share").onclick=()=>shareBackup();
+  if(syncUrl()) document.getElementById("passSave").onclick=async()=>{ setSetting("passcode", document.getElementById("pass").value.trim()); setSetting("syncState",""); if(passcode()){ const ok=await syncNow("passcode"); if(!ok && settings().syncState==="error"){ alert("The research team's server did not accept that passcode: "+settings().syncError); } } admin(); };
+  if(syncEnabled()) document.getElementById("syncBtn").onclick=async()=>{ const ok=await syncNow("manual"); if(ok) admin(); };
   document.getElementById("copy").onclick=()=>{navigator.clipboard.writeText(csv).then(()=>alert("Copied "+r.length+" responses"))};
-  document.getElementById("wipe").onclick=()=>{ if(prompt("Type DELETE to remove all "+r.length+" responses and the household log from this device")==="DELETE"){ saveResponses([]); saveHH({houses:{},extras:[]}); admin(); } };
+  document.getElementById("wipe").onclick=async()=>{ if(prompt("Type DELETE to remove all "+r.length+" responses and the household log from this device")!=="DELETE") return;
+    saveResponses([]); saveHH({houses:{},extras:[]});
+    if(syncEnabled() && confirm("Also delete the synced copy held by the research team? Choose Cancel to keep it (it will come back to this device at the next sync).")){
+      try{ const res=await fetch(syncUrl(),{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({passcode:passcode(), device:deviceId(), action:"reset", confirm:"DELETE"})}); const j=await res.json(); alert(j.ok?"Deleted on the server too.":"Server said: "+(j.error||"no")); }catch(e){ alert("Could not reach the server: "+e.message); } }
+    admin(); };
   document.getElementById("home").onclick=()=>{ VIEW={screen:"grid"}; render(); };
   document.getElementById("autobk").onchange=e=>localStorage.setItem("cocos_autobackup", e.target.checked?"on":"off");
   document.getElementById("restore").onclick=()=>document.getElementById("restoreFile").click();
