@@ -76,9 +76,16 @@ h3.blk{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .counts{display:flex;gap:14px;flex-wrap:wrap;font-size:15px;margin:6px 0 10px}
 .counts b{font-size:19px}
 .langtag{font-size:13px;border:1px solid var(--acc);color:var(--acc);border-radius:6px;padding:2px 6px;cursor:pointer}
+/* home screen */
+.home{max-width:560px;margin:30px auto 0;display:flex;flex-direction:column;gap:16px}
+.homebtn{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;text-align:left;padding:22px 24px;border-radius:14px}
+.homebtn .hb-title{font-size:24px;font-weight:700}
+.homebtn .hb-sub{font-size:15px;font-weight:400;opacity:.85}
+.homebtn.sec .hb-sub{color:var(--mute)}
+.admin .homebtn{margin:10px 0}
 
 </style></head><body>
-<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 6cd897</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Interviewer</a></span></header>
+<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 084fec</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Home</a></span></header>
 <main id="main"></main>
 <div class="nav" id="nav"><button class="sec" id="back">Back</button><span style="flex:1"></span><button class="warn" id="endEarly">End early</button><button id="next">Next</button></div>
 <script>
@@ -91,7 +98,7 @@ const HOUSES_MAIN = Array.from({length:97},(_,i)=>String(i+1));
 const HOUSES_SPECIAL = Array.from({length:10},(_,i)=>String(i+98));
 const OUTCOMES = {NC:"Nobody home", A:"Appointment made", R:"Refused (this person)", RA:"Everyone refused", V:"Vacant / nobody lives here", NR:"Not a house (shop, office, other)", I:"Interview done", P:"Interview ended early", O:"Other (see note)"};
 let S = null;          // current interview session
-let VIEW = {screen:"grid", house:null};  // what the start screen shows when no session
+let VIEW = {screen:"home", house:null};  // home | grid | house | admin
 
 // ---------------- storage
 function loadResponses(){ try{return JSON.parse(localStorage.getItem(KEY_RESP)||"[]")}catch(e){return []} }
@@ -127,6 +134,24 @@ function status(rec){
 }
 function allHouseIds(h){ return HOUSES_MAIN.concat(HOUSES_SPECIAL, h.extras.map(e=>e.id)); }
 
+
+// ---------------- home screen
+function renderHome(main){
+  document.getElementById("nav").style.display="none";
+  const r=loadResponses().length; const hh=loadHH(); const done=Object.values(hh.houses).filter(x=>x.responses.length).length;
+  let paused=null; try{ const c=localStorage.getItem(KEY_CUR); if(c) paused=JSON.parse(c); }catch(e){}
+  main.innerHTML=`<div class="home">
+    <button class="homebtn" id="goSurvey"><span class="hb-title">Survey</span><span class="hb-sub">House list, visits and interviews</span></button>
+    <button class="homebtn sec" id="goData"><span class="hb-title">Data and settings</span><span class="hb-sub">Sync, send backup, files, passcode</span></button>
+    ${paused?`<button class="homebtn warn" id="resume"><span class="hb-title">Resume the interview in progress</span><span class="hb-sub">${paused.house?"House "+esc(paused.house):"No house number"}, started ${esc(new Date(paused.started).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}))}</span></button>`:""}
+    <p class="info" style="text-align:center;margin-top:26px"><b>${done}</b> houses done &middot; <b>${r}</b> interviews on this device${syncEnabled()?`<br><span id="syncLine">${esc(syncLineText())}</span>`:""}</p>
+  </div>`;
+  document.getElementById("goSurvey").onclick=()=>{ VIEW={screen:"grid"}; render(); };
+  document.getElementById("goData").onclick=()=>{ VIEW={screen:"admin"}; render(); };
+  if(paused) document.getElementById("resume").onclick=()=>{ S=paused; render(); };
+  if(syncEnabled() && (!settings().lastSync || Date.now()-new Date(settings().lastSync).getTime()>120000)) syncNow("home");
+}
+
 // ---------------- grid screen
 function renderGrid(main){
   document.getElementById("nav").style.display="none";
@@ -136,6 +161,7 @@ function renderGrid(main){
   const tile=id=>{ const rec=h.houses[id]; const s=status(rec); const ex=h.extras.find(e=>e.id===id);
     return `<div class="tile ${s}" data-house="${esc(id)}" title="${esc(ex?ex.desc:"")}">${esc(id)}${rec&&rec.visits.length&&s!=="done"?`<small>${rec.visits.length} visit${rec.visits.length>1?"s":""}</small>`:""}</div>`; };
   main.innerHTML=`
+  <p style="margin:0 0 10px"><a href="#" id="backHome" style="color:var(--acc)">&larr; Home</a></p>
   <div class="hdrow"><span>Interviewer:
     <select id="who" class="te" style="width:auto;display:inline-block;font-size:16px;padding:6px 10px">${SPEC.blocks[0].pages[0][0].choices.map(c=>`<option ${st.interviewer===c?"selected":""}>${esc(c)}</option>`).join("")}</select></span>
     <span class="legend"><span><i style="background:var(--new)"></i>not visited</span><span><i style="background:var(--visited)"></i>visited, no interview yet</span><span><i style="background:var(--done)"></i>interview done</span><span><i style="background:var(--closed)"></i>closed, no interview</span></span></div>
@@ -146,6 +172,7 @@ function renderGrid(main){
   <p style="margin-top:28px"><button class="sec" id="noHouse">Start an interview with no house number</button></p>
   <p class="info">Tap a house to record a visit or start its interview. ${syncEnabled()?`<span id="syncLine">${esc(syncLineText())}</span>`:"Everything is stored on this tablet until it is sent from the Interviewer screen."}</p>`;
   document.getElementById("who").onchange=e=>setSetting("interviewer", e.target.value);
+  document.getElementById("backHome").onclick=e=>{e.preventDefault(); VIEW={screen:"home"}; render();};
   if(syncEnabled() && (!settings().lastSync || Date.now()-new Date(settings().lastSync).getTime()>120000)) syncNow("grid");
   if(!st.interviewer) setSetting("interviewer", SPEC.blocks[0].pages[0][0].choices[2]);
   main.querySelectorAll(".tile[data-house]").forEach(t=>t.onclick=()=>{ VIEW={screen:"house",house:t.dataset.house}; render(); });
@@ -256,7 +283,7 @@ function render(){
   const main=document.getElementById("main"); const cnt=document.getElementById("cnt");
   cnt.textContent = loadResponses().length + " saved";
   document.getElementById("langTag").textContent = lang()==="en" ? "EN" : "CM";
-  if(!S){ if(VIEW.screen==="house") renderHouse(main, VIEW.house); else renderGrid(main); return; }
+  if(!S){ if(VIEW.screen==="house") renderHouse(main, VIEW.house); else if(VIEW.screen==="grid") renderGrid(main); else if(VIEW.screen==="admin") admin(); else renderHome(main); return; }
   if(S.idx>=S.pages.length){ finish(); return; }
   const page=S.pages[S.idx];
   const items=page.items.filter(visible);
@@ -418,7 +445,7 @@ async function syncNow(reason){
     if(j.households) saveHH(mergeHH(loadHH(), j.households));
     if(j.responses) saveResponses(mergeResponses(loadResponses(), j.responses));
     setSetting("lastSync", new Date().toISOString()); setSetting("syncState","ok"); setSetting("syncError","");
-    syncBusy=false; updateSyncLine(); if(!S && VIEW.screen==="grid") render(); return true;
+    syncBusy=false; updateSyncLine(); if(!S && (VIEW.screen==="grid"||VIEW.screen==="home")) render(); return true;
   }catch(e){ setSetting("syncState","error"); setSetting("syncError", String(e&&e.message||e)); syncBusy=false; updateSyncLine(); return false; }
 }
 function syncLineText(){
@@ -434,41 +461,50 @@ window.addEventListener("online", ()=>syncNow("online"));
 
 function admin(){
   const r=loadResponses(); const csv=toCSV(r.map(flatten)); const hh=loadHH(); const hcsv=toCSV(flattenHH(hh)); const d=new Date().toISOString().slice(0,10);
-  const done=Object.values(hh.houses).filter(x=>x.responses.length).length; const st=settings();
+  const done=Object.values(hh.houses).filter(x=>x.responses.length).length; const st=settings(); const showFiles=!!VIEW.files;
   document.getElementById("nav").style.display="none";
-  document.getElementById("main").innerHTML=`<div class="admin"><h2>Interviewer</h2><p><b>${r.length}</b> stored response(s) on this device; <b>${done}</b> houses with an interview done.</p>
-  <div class="sub">Send the data to the research team</div>
-  <p><button id="share" class="big">Send backup (opens the share sheet: choose Gmail, send to ${esc(SYNC.email)})</button></p>
-  <p class="info">${st.lastShare?"Last sent from this device: "+esc(new Date(st.lastShare).toLocaleString()):"Nothing sent from this device yet."} Send a backup at the end of each day of interviewing.</p>
-  ${syncUrl()?`<p><label class="info">Sync passcode (from Lachlan; leave blank to keep this device offline-only) <input type="password" class="te" id="pass" value="${esc(passcode())}" style="max-width:220px;display:inline-block;margin-left:8px" inputmode="numeric" autocomplete="off"></label> <button id="passSave" class="sec">Save</button></p>`:""}
-  ${syncEnabled()?`<p><button id="syncBtn" class="sec">Sync now</button> <span class="info" id="syncLine">${esc(syncLineText())}</span></p>`:""}
-  <div class="sub">Files</div>
-  <p><button id="dlcsv" class="sec">Download responses CSV</button> <button id="dlhh" class="sec">Download household log CSV</button></p>
-  <p><button id="dljson" class="sec">Download everything (JSON backup)</button> <button id="copy" class="sec">Copy responses CSV to clipboard</button></p>
-  <p class="info">Downloads go to the tablet's Downloads folder.</p>
-  <details><summary class="info">Preview of the responses CSV</summary><pre>${esc(csv).slice(0,3000)}${csv.length>3000?"\n…":""}</pre></details>
-  <p><label><input type="checkbox" id="autobk" ${localStorage.getItem("cocos_autobackup")!=="off"?"checked":""}> Save a JSON backup to Downloads after each interview</label></p>
-  <p style="margin-top:30px"><button class="sec" id="restore">Restore from a JSON backup file</button> <input type="file" id="restoreFile" accept="application/json" style="display:none"></p>
-  <p style="margin-top:30px"><button class="warn" id="wipe">Delete all stored responses and the household log</button> <span class="info">(only after you have confirmed the export)</span></p>
-  <p style="margin-top:30px"><button class="sec" id="home">Back to the house list</button></p></div>`;
+  const syncBlock = !syncUrl() ? "" : syncEnabled()
+    ? `<button class="homebtn" id="syncBtn"><span class="hb-title">Sync now</span><span class="hb-sub" id="syncLine">${esc(syncLineText())}</span></button>`
+    : `<button class="homebtn" id="syncSetup"><span class="hb-title">Set up sync</span><span class="hb-sub">Enter the passcode from Lachlan (one time)</span></button>`;
+  document.getElementById("main").innerHTML=`<div class="admin">
+  <p style="margin:0 0 10px"><a href="#" id="backHome" style="color:var(--acc)">&larr; Home</a></p>
+  <h2>Data and settings</h2><p class="info"><b>${r.length}</b> interview(s) on this device; <b>${done}</b> houses done.</p>
+  ${syncBlock}
+  <button class="homebtn sec" id="share"><span class="hb-title">Send backup by email</span><span class="hb-sub">${st.lastShare?"Last sent "+esc(new Date(st.lastShare).toLocaleString()):"Opens the share sheet: choose Gmail, send to "+esc(SYNC.email)}</span></button>
+  <p style="margin-top:22px"><button class="sec" id="toggleFiles">${showFiles?"Hide files and settings":"Files and settings"}</button></p>
+  <div id="files" style="display:${showFiles?"block":"none"}">
+    ${syncUrl()?`<div class="sub">Sync passcode</div><p><input type="password" class="te" id="pass" value="${esc(passcode())}" style="max-width:220px;display:inline-block" inputmode="numeric" autocomplete="off" placeholder="6 digits"> <button id="passSave" class="sec">Save</button></p><p class="info">Leave blank to keep this device offline-only.</p>`:""}
+    <div class="sub">Files</div>
+    <p><button id="dlcsv" class="sec">Download responses CSV</button> <button id="dlhh" class="sec">Download household log CSV</button></p>
+    <p><button id="dljson" class="sec">Download everything (JSON backup)</button> <button id="copy" class="sec">Copy responses CSV to clipboard</button></p>
+    <p class="info">Downloads go to the tablet's Downloads folder.</p>
+    <details><summary class="info">Preview of the responses CSV</summary><pre>${esc(csv).slice(0,3000)}${csv.length>3000?"\n…":""}</pre></details>
+    <p><label><input type="checkbox" id="autobk" ${localStorage.getItem("cocos_autobackup")!=="off"?"checked":""}> Save a JSON backup to Downloads after each interview</label></p>
+    <p style="margin-top:30px"><button class="sec" id="restore">Restore from a JSON backup file</button> <input type="file" id="restoreFile" accept="application/json" style="display:none"></p>
+    <p style="margin-top:30px"><button class="warn" id="wipe">Delete all stored responses and the household log</button> <span class="info">(only after you have confirmed the export)</span></p>
+  </div></div>`;
+  document.getElementById("backHome").onclick=e=>{e.preventDefault(); VIEW={screen:"home"}; render();};
+  document.getElementById("toggleFiles").onclick=()=>{ VIEW={screen:"admin", files:!showFiles}; render(); };
   document.getElementById("dlcsv").onclick=()=>download("cocos_responses_"+d+".csv",csv,"text/csv");
   document.getElementById("dlhh").onclick=()=>download("cocos_household_log_"+d+".csv",hcsv,"text/csv");
   document.getElementById("dljson").onclick=()=>download(backupName(),backupJSON(),"application/json");
   document.getElementById("share").onclick=()=>shareBackup();
-  if(syncUrl()) document.getElementById("passSave").onclick=async()=>{ setSetting("passcode", document.getElementById("pass").value.trim()); setSetting("syncState",""); if(passcode()){ const ok=await syncNow("passcode"); if(!ok && settings().syncState==="error"){ alert("The research team's server did not accept that passcode: "+settings().syncError); } } admin(); };
-  if(syncEnabled()) document.getElementById("syncBtn").onclick=async()=>{ const ok=await syncNow("manual"); if(ok) admin(); };
+  if(syncUrl()){
+    document.getElementById("passSave").onclick=async()=>{ setSetting("passcode", document.getElementById("pass").value.trim()); setSetting("syncState",""); if(passcode()){ const ok=await syncNow("passcode"); if(!ok && settings().syncState==="error"){ alert("The research team's server did not accept that passcode: "+settings().syncError); } } VIEW={screen:"admin"}; render(); };
+    const su=document.getElementById("syncSetup"); if(su) su.onclick=()=>{ VIEW={screen:"admin", files:true}; render(); setTimeout(()=>{ const p=document.getElementById("pass"); if(p) p.focus(); },50); };
+    const sb=document.getElementById("syncBtn"); if(sb) sb.onclick=async()=>{ const ok=await syncNow("manual"); if(ok) render(); };
+  }
   document.getElementById("copy").onclick=()=>{navigator.clipboard.writeText(csv).then(()=>alert("Copied "+r.length+" responses"))};
   document.getElementById("wipe").onclick=async()=>{ if(prompt("Type DELETE to remove all "+r.length+" responses and the household log from this device")!=="DELETE") return;
     saveResponses([]); saveHH({houses:{},extras:[]});
     if(syncEnabled() && confirm("Also delete the synced copy held by the research team? Choose Cancel to keep it (it will come back to this device at the next sync).")){
       try{ const res=await fetch(syncUrl(),{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({passcode:passcode(), device:deviceId(), action:"reset", confirm:"DELETE"})}); const j=await res.json(); alert(j.ok?"Deleted on the server too.":"Server said: "+(j.error||"no")); }catch(e){ alert("Could not reach the server: "+e.message); } }
-    admin(); };
-  document.getElementById("home").onclick=()=>{ VIEW={screen:"grid"}; render(); };
+    render(); };
   document.getElementById("autobk").onchange=e=>localStorage.setItem("cocos_autobackup", e.target.checked?"on":"off");
   document.getElementById("restore").onclick=()=>document.getElementById("restoreFile").click();
-  document.getElementById("restoreFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const j=JSON.parse(rd.result); const resp=Array.isArray(j)?j:j.responses; if(!confirm("Replace the data on this tablet with the backup ("+(resp||[]).length+" responses)?")) return; if(resp) saveResponses(resp); if(j.households) saveHH(j.households); admin(); }catch(err){ alert("Could not read that file."); } }; rd.readAsText(f); };
+  document.getElementById("restoreFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const j=JSON.parse(rd.result); const resp=Array.isArray(j)?j:j.responses; if(!confirm("Replace the data on this tablet with the backup ("+(resp||[]).length+" responses)?")) return; if(resp) saveResponses(resp); if(j.households) saveHH(j.households); render(); }catch(err){ alert("Could not read that file."); } }; rd.readAsText(f); };
 }
-document.getElementById("hdrAdmin").addEventListener("click",e=>{e.preventDefault(); if(!S || confirm("A respondent session is in progress. Open the interviewer screen anyway? (Their progress is kept.)")) admin();});
+document.getElementById("hdrAdmin").addEventListener("click",e=>{e.preventDefault(); if(!S){ VIEW={screen:"home"}; render(); } else if(confirm("A respondent session is in progress. Leave it and go to the home screen? (Their progress is kept; the interview can be resumed from Home.)")){ saveCur(); S=null; VIEW={screen:"home"}; render(); }});
 document.getElementById("langTag").addEventListener("click",e=>{e.preventDefault(); toggleLang();});
 try{ const c=localStorage.getItem(KEY_CUR); if(c){ S=JSON.parse(c); } }catch(e){}
 render();
