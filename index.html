@@ -85,7 +85,7 @@ h3.blk{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .admin .homebtn{margin:10px 0}
 
 </style></head><body>
-<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 084fec</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Home</a></span></header>
+<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 00fc74</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Home</a></span></header>
 <main id="main"></main>
 <div class="nav" id="nav"><button class="sec" id="back">Back</button><span style="flex:1"></span><button class="warn" id="endEarly">End early</button><button id="next">Next</button></div>
 <script>
@@ -123,7 +123,7 @@ function itemChoices(it){ const k=I18N[it.tag]||{}; return trList(k.choices, it.
 function toggleLang(){ const l = lang()==="en" ? "ms" : "en"; if(S){ S.lang=l; saveCur(); } else setSetting("lang", l); render(); }
 
 // ---------------- household status
-function houseRec(h,id){ if(!h.houses[id]) h.houses[id]={id, occupied:"", men:"", women:"", rank:"", visits:[], responses:[], notes:""}; return h.houses[id]; }
+function houseRec(h,id){ if(!h.houses[id]) h.houses[id]={id, occupied:"", men:"", women:"", rank:"", knows:"", visits:[], responses:[], notes:""}; return h.houses[id]; }
 function status(rec){
   if(!rec) return "new";
   if(rec.responses && rec.responses.length) return "done";
@@ -205,6 +205,8 @@ function renderHouse(main, id){
   <div class="rule">Ask who in the house is 18 or over, and whose birthday was most recent. Ask that person first. If they are out, come back for them (up to three visits). If they decline, ask the person with the next most recent birthday, and so on. Say: "For this survey we choose one person in each house the same way, so the results are fair for the whole island."</div>
   <p class="info" style="margin:4px 0">Which person on the birthday list is being interviewed?</p>
   ${seg("rank",[["1","1st (most recent birthday)"],["2","2nd"],["3","3rd"],["4","4th or later"],["X","Rule could not be applied"]],rec.rank)}
+  <p class="info" style="margin:10px 0 4px">Do you know this person well (close friend or relative)?</p>
+  ${seg("knows",[["Y","Yes"],["N","No"]],rec.knows||"")}
   <div class="row"><label>Notes about this house<input type="text" class="te" id="hnote" value="${esc(rec.notes)}" placeholder="anything useful for next time"></label></div>
   <p><button class="big" id="startIv" ${canStart?"":"disabled"}>Start interview for house ${esc(id)}</button></p>
   ${canStart?"":`<p class="info">${s==="done"?"An interview has already been done for this house. Use the no-house option on the main screen if a second interview here is really intended.":"To start: mark that people live here, enter the number of adult men and women, and choose which person on the birthday list is being interviewed."}</p>`}
@@ -387,7 +389,7 @@ function flatten(r){
 function flattenHH(h){
   const rows=[]; const maxV=Math.max(1,...Object.values(h.houses).map(x=>x.visits.length));
   for(const id of allHouseIds(h)){ const rec=h.houses[id]||houseRec({houses:{},extras:[]},id); const ex=h.extras.find(e=>e.id===id);
-    const row={house:id, type: HOUSES_MAIN.includes(id)?"main":HOUSES_SPECIAL.includes(id)?"special":"extra", description: ex?ex.desc:"", status: status(rec), occupied: rec.occupied, adult_men: rec.men, adult_women: rec.women, birthday_rank: rec.rank, n_visits: rec.visits.length, response_ids: rec.responses.join(";"), notes: rec.notes};
+    const row={house:id, type: HOUSES_MAIN.includes(id)?"main":HOUSES_SPECIAL.includes(id)?"special":"extra", description: ex?ex.desc:"", status: status(rec), occupied: rec.occupied, adult_men: rec.men, adult_women: rec.women, birthday_rank: rec.rank, knows_respondent_well: rec.knows||"", n_visits: rec.visits.length, response_ids: rec.responses.join(";"), notes: rec.notes};
     for(let i=0;i<maxV;i++){ const v=rec.visits[i]||{}; row["visit"+(i+1)+"_date"]=v.date||""; row["visit"+(i+1)+"_outcome"]=v.outcome||""; row["visit"+(i+1)+"_note"]=v.note||""; }
     rows.push(row); }
   return rows;
