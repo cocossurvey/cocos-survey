@@ -91,7 +91,7 @@ h3.blk{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--
 .roster .pick{display:inline-block;background:var(--acc);color:#fff;border-radius:6px;padding:2px 8px;font-size:14px;margin-left:6px}
 
 </style></head><body>
-<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build c27223</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Interviewer</a></span></header>
+<header><span id="hdr"><b>Cocos community survey</b> · v16-offline · build 02b001</span><span><span id="cnt"></span> <a href="#" id="langTag" class="langtag">EN</a> <a href="#" id="hdrAdmin">Interviewer</a></span></header>
 <main id="main"></main>
 <div class="nav" id="nav"><button class="sec" id="back">Back</button><span style="flex:1"></span><button class="warn" id="endEarly">End early</button><button id="next">Next</button></div>
 <script>
@@ -137,22 +137,32 @@ function syncAdults(rec){ // keep one roster row per adult: men first, then wome
   const oldM=old.filter(a=>a.sex==="M"), oldW=old.filter(a=>a.sex==="F"); const out=[];
   for(let i=0;i<m;i++) out.push(oldM[i]||{sex:"M",m:"",d:"",st:""});
   for(let i=0;i<w;i++) out.push(oldW[i]||{sex:"F",m:"",d:"",st:""});
-  rec.adults=out; return out;
+  rec.adults=out; if(!rec.tieSeed) rec.tieSeed=Math.random().toString(36).slice(2,10); return out;
+}
+function monthsSinceBirthday(m){ // whole months since the last birthday month, counting the current month as 0
+  const now=new Date(); return ((now.getMonth()+1)-m+12)%12;
 }
 function daysSinceBirthday(m,d){ // days since the last birthday on or before today
   const now=new Date(); const y=now.getFullYear(); let b=new Date(y,m-1,d); if(b>now) b=new Date(y-1,m-1,d);
   return Math.floor((now-b)/86400000);
 }
-function birthdayOrder(rec){ // adults with a full birthday, most recent first; ties keep roster order
-  const ad=rec.adults||[]; return ad.map((a,i)=>({i,a})).filter(x=>x.a.m&&x.a.d).sort((p,q)=>daysSinceBirthday(+p.a.m,+p.a.d)-daysSinceBirthday(+q.a.m,+q.a.d)||p.i-q.i);
+function tieKey(rec,i){ // stable pseudo-random number per adult, from a seed fixed when the roster was first made
+  let h=0; const str=String(rec.tieSeed||"")+":"+i; for(let k=0;k<str.length;k++){ h=(h*31+str.charCodeAt(k))>>>0; } return h;
+}
+function birthdayOrder(rec){ // adults with at least a birthday month, most recent first
+  const ad=rec.adults||[]; const items=ad.map((a,i)=>({i,a})).filter(x=>x.a.m);
+  items.sort((p,q)=>{ const dm=monthsSinceBirthday(+p.a.m)-monthsSinceBirthday(+q.a.m); if(dm) return dm;
+    if(p.a.d&&q.a.d){ const dd=daysSinceBirthday(+p.a.m,+p.a.d)-daysSinceBirthday(+q.a.m,+q.a.d); if(dd) return dd; }
+    return tieKey(rec,p.i)-tieKey(rec,q.i); });
+  return items;
 }
 function selection(rec){ // who the rule picks now, and their rank on the birthday list
-  const ad=rec.adults||[]; const n=ad.length; if(!n) return {complete:false, rank:"", idx:-1, order:[]};
-  const order=birthdayOrder(rec); if(order.length<n) return {complete:false, rank:"", idx:-1, order};
-  for(let r=0;r<order.length;r++){ if(!order[r].a.st) return {complete:true, rank:String(r+1), idx:order[r].i, order}; }
-  return {complete:true, rank:"X", idx:-1, order};
+  const ad=rec.adults||[]; const n=ad.length; if(!n) return {complete:false, rank:"", idx:-1, order:[], tie:false};
+  const order=birthdayOrder(rec); if(order.length<n) return {complete:false, rank:"", idx:-1, order, tie:false};
+  for(let r=0;r<order.length;r++){ if(!order[r].a.st){ const a=order[r].a; const tie=order.some((x,k)=>k!==r && x.a.m===a.m && !x.a.st && !(x.a.d&&a.d)); return {complete:true, rank:String(r+1), idx:order[r].i, order, tie}; } }
+  return {complete:true, rank:"X", idx:-1, order, tie:false};
 }
-function adultLabel(a,i){ return "Adult "+(i+1)+" ("+(a.sex==="M"?"man":"woman")+(a.m&&a.d?", birthday "+(+a.d)+" "+MONTHS[+a.m-1]:"")+")"; }
+function adultLabel(a,i){ return "Adult "+(i+1)+" ("+(a.sex==="M"?"man":"woman")+(a.m?", birthday "+(a.d?(+a.d)+" ":"")+MONTHS[+a.m-1]:"")+")"; }
 function status(rec){
   if(!rec) return "new";
   if(rec.responses && rec.responses.length) return "done";
@@ -229,9 +239,9 @@ function renderHouse(main, id){
     : !rec.adults.length ? `<p class="info">No adults recorded for this house.</p>`
     : `<div class="roster">${rec.adults.map((a,i)=>{ const rk=sel.order.findIndex(x=>x.i===i); const picked=sel.complete&&sel.idx===i;
         return `<div class="adult ${picked?"picked":""} ${a.st?"out":""}"><div class="adult-h"><b>${adultLabel(a,i)}</b>${sel.complete&&rk>=0?` <span class="info">${rk+1}${["st","nd","rd"][rk]||"th"} most recent</span>`:""}${picked?` <span class="pick">Interview this person</span>`:""}</div>
-        <div class="row"><label>Birthday month<select class="te" data-ad="${i}" data-f="m">${monthOpts(a.m)}</select></label><label>Day<select class="te" data-ad="${i}" data-f="d">${dayOpts(a.d)}</select></label>
+        <div class="row"><label>Birthday month<select class="te" data-ad="${i}" data-f="m">${monthOpts(a.m)}</select></label><label>Day (only if they offer it)<select class="te" data-ad="${i}" data-f="d">${dayOpts(a.d)}</select></label>
         <label>Status<select class="te" data-ad="${i}" data-f="st">${Object.entries(ADULT_STATUS).map(([k,l])=>`<option value="${k}" ${a.st===k?"selected":""}>${l}</option>`).join("")}</select></label></div></div>`; }).join("")}</div>
-      ${sel.complete ? (sel.idx>=0 ? `<p class="info"><b>${adultLabel(rec.adults[sel.idx],sel.idx)}</b> is ${sel.rank}${["st","nd","rd"][+sel.rank-1]||"th"} on the birthday list and is the person to interview.${sel.rank!=="1"?" Ask them only because the people above them on the list declined or are away.":""}</p>` : `<p class="info">Everyone in this house has declined or is away, so no interview can be done here. Record the visit as "Everyone refused" if that is what happened.</p>`) : `<p class="info">Enter a birthday month and day for every adult; the app will then say who to interview.</p>`}`;
+      ${sel.complete ? (sel.idx>=0 ? `<p class="info"><b>${adultLabel(rec.adults[sel.idx],sel.idx)}</b> is ${sel.rank}${["st","nd","rd"][+sel.rank-1]||"th"} on the birthday list and is the person to interview.${sel.rank!=="1"?" Ask them only because the people above them on the list declined or are away.":""}${sel.tie?" Two or more adults share that birthday month, so the app chose between them at random; if they know the day of the month, enter it and the app will use that instead.":""}</p>` : `<p class="info">Everyone in this house has declined or is away, so no interview can be done here. Record the visit as "Everyone refused" if that is what happened.</p>`) : `<p class="info">Enter a birthday month for every adult; the app will then say who to interview.</p>`}`;
   main.innerHTML=`<div class="card">
   <p><a href="#" id="backGrid" style="color:var(--acc)">&larr; Back to all houses</a></p>
   <h2>House ${esc(id)}${ex?` <span class="info">(${esc(ex.desc)})</span>`:""}</h2>
@@ -248,13 +258,13 @@ function renderHouse(main, id){
   <div class="row"><label>Note (optional)<input type="text" class="te" id="vnote" placeholder="e.g. come back after 5pm, ask for Ibu Sari"></label></div>
   <p><button class="sec" id="addVisit">Save this visit</button></p>
   <div class="sub">Who to interview</div>
-  <div class="rule">Ask for the birthday (month and day, no year needed) of every person 18 or over who lives here, and enter them below. The app picks the person whose birthday was most recent. Ask that person first. If they are out, come back for them (up to three visits) rather than interviewing someone else. Only if they decline or are away for the whole fieldwork period, mark that against their name and the app moves to the next birthday. Say: "For this survey we choose one person in each house the same way, so the results are fair for the whole island."</div>
+  <div class="rule">Ask which month each person 18 or over in this house has their birthday (no year, and the day only if they offer it), and enter them below. The app picks the person whose birthday was most recent. Ask that person first. If they are out, come back for them (up to three visits) rather than interviewing someone else. Only if they decline or are away for the whole fieldwork period, mark that against their name and the app moves to the next birthday. Say: "For this survey we choose one person in each house the same way, so the results are fair for the whole island."</div>
   <div id="rosterBox">${rosterHtml(sel)}</div>
   <p class="info" style="margin:10px 0 4px">Do you know this person well (close friend or relative)?</p>
   ${seg("knows",[["Y","Yes"],["N","No"]],rec.knows||"")}
   <div class="row"><label>Notes about this house<input type="text" class="te" id="hnote" value="${esc(rec.notes)}" placeholder="anything useful for next time"></label></div>
   <p><button class="big" id="startIv" ${canStart?"":"disabled"}>Start interview for house ${esc(id)}</button></p>
-  <span id="startHint">${canStart?"":`<p class="info">${s==="done"?"An interview has already been done for this house. Use the no-house option on the main screen if a second interview here is really intended.":"To start: mark that people live here, enter the number of adult men and women, and enter every adult's birthday so the app can pick the person to interview."}</p>`}</span>
+  <span id="startHint">${canStart?"":`<p class="info">${s==="done"?"An interview has already been done for this house. Use the no-house option on the main screen if a second interview here is really intended.":"To start: mark that people live here, enter the number of adult men and women, and enter every adult's birthday month so the app can pick the person to interview."}</p>`}</span>
   </div>`;
   const save=()=>{ const hh=loadHH(); hh.houses[id]=touch(rec); saveHH(hh); scheduleSync(); };
   document.getElementById("backGrid").onclick=e=>{e.preventDefault(); VIEW={screen:"grid"}; render();};
@@ -285,7 +295,7 @@ function newSession(houseId){
   S.ans.survey_date=today().split("-").reverse().join("/");
   if(houseId){ const rec=loadHH().houses[houseId]||{}; S.ans.house_no=houseId; S.ans.hh_adult_men=rec.men; S.ans.hh_adult_women=rec.women;
     S.ans.birthday_rank={ "1":1,"2":2,"3":3,"4":4,"X":5 }[rec.rank]||(parseInt(rec.rank,10)>4?4:"");
-    const sl=selection(rec); if(sl.idx>=0){ const a=rec.adults[sl.idx]; S.ans.selected_adult=sl.idx+1; S.ans.selected_sex=a.sex; S.ans.selected_birthday=String(a.m).padStart(2,"0")+"-"+String(a.d).padStart(2,"0"); }
+    const sl=selection(rec); if(sl.idx>=0){ const a=rec.adults[sl.idx]; S.ans.selected_adult=sl.idx+1; S.ans.selected_sex=a.sex; S.ans.selected_birthday=String(a.m).padStart(2,"0")+(a.d?"-"+String(a.d).padStart(2,"0"):""); S.ans.selected_tiebreak=sl.tie?1:0; }
     S.idx=1; }  // skip the interviewer page
   saveCur(); render();
 }
@@ -441,7 +451,7 @@ function flattenHH(h){
   for(const id of allHouseIds(h)){ const rec=h.houses[id]||houseRec({houses:{},extras:[]},id); const ex=h.extras.find(e=>e.id===id);
     const row={house:id, type: HOUSES_MAIN.includes(id)?"main":HOUSES_SPECIAL.includes(id)?"special":"extra", description: ex?ex.desc:"", status: status(rec), occupied: rec.occupied, adult_men: rec.men, adult_women: rec.women, birthday_rank: rec.rank, knows_respondent_well: rec.knows||"", n_visits: rec.visits.length, response_ids: rec.responses.join(";"), notes: rec.notes};
     for(let i=0;i<maxV;i++){ const v=rec.visits[i]||{}; row["visit"+(i+1)+"_date"]=v.date||""; row["visit"+(i+1)+"_outcome"]=v.outcome||""; row["visit"+(i+1)+"_note"]=v.note||""; }
-    for(let i=0;i<maxA;i++){ const a=(rec.adults||[])[i]||{}; row["adult"+(i+1)+"_sex"]=a.sex||""; row["adult"+(i+1)+"_birthday"]=a.m&&a.d?String(a.m).padStart(2,"0")+"-"+String(a.d).padStart(2,"0"):""; row["adult"+(i+1)+"_status"]=a.st||""; }
+    for(let i=0;i<maxA;i++){ const a=(rec.adults||[])[i]||{}; row["adult"+(i+1)+"_sex"]=a.sex||""; row["adult"+(i+1)+"_birthday"]=a.m?String(a.m).padStart(2,"0")+(a.d?"-"+String(a.d).padStart(2,"0"):""):""; row["adult"+(i+1)+"_status"]=a.st||""; }
     rows.push(row); }
   return rows;
 }
